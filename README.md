@@ -7,9 +7,8 @@ Learning materials for the course "AI for videogames" based on simple roguelike 
 
 ## Dependencies
 This project uses:
-* bgfx for week1 project
-* raylib for week2 and later project
-* flecs for ECS
+* raylib for rendering
+* entt for ECS
 
 ## Building
 
