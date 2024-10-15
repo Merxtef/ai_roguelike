@@ -52,19 +52,19 @@ static void on_closest_enemy_pos(entt::registry &registry, entt::entity entity, 
     Position closestPos;
 
     // Iterate over all entities in the view
-    view.each([&](entt::entity enemy, const Position &epos, const Team &et)
+    for (auto &&[entt, epos, et]: view.each())
     {
-        if (t.team == et.team)
-            return; // Skip if on the same team
+      if (t.team == et.team)
+          return; // Skip if on the same team
 
-        float curDist = dist(epos, pos);
-        if (curDist < closestDist)
-        {
-            closestDist = curDist;
-            closestPos = epos;
-            closestEnemy = enemy;
-        }
-    });
+      float curDist = dist(epos, pos);
+      if (curDist < closestDist)
+      {
+          closestDist = curDist;
+          closestPos = epos;
+          closestEnemy = enemy;
+      }
+    }
 
     // If a valid closest enemy was found, call the provided function
     if (registry.valid(closestEnemy))
@@ -148,13 +148,13 @@ public:
     static auto enemiesView = registry.view<const Position, const Team>();
     bool enemiesFound = false;
 
-    enemiesView.each([&](entt::entity enemy, const Position &epos, const Team &et)
+    for (auto &&[enemy, epos, et]: enemiesView.each())
     {
       if (t.team == et.team)
         return;
       float curDist = dist(epos, pos);
       enemiesFound |= curDist <= triggerDist;
-    });
+    }
 
     return enemiesFound;
   }
