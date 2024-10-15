@@ -11,19 +11,19 @@ StateMachine::~StateMachine()
   transitions.clear();
 }
 
-void StateMachine::act(float dt, flecs::world &ecs, flecs::entity entity)
+void StateMachine::act(float dt, entt::registry &registry, entt::registry::entity_type entity)
 {
   if (curStateIdx < states.size())
   {
     for (const std::pair<StateTransition*, int> &transition : transitions[curStateIdx])
-      if (transition.first->isAvailable(ecs, entity))
+      if (transition.first->isAvailable(registry, entity))
       {
         states[curStateIdx]->exit();
         curStateIdx = transition.second;
         states[curStateIdx]->enter();
         break;
       }
-    states[curStateIdx]->act(dt, ecs, entity);
+    states[curStateIdx]->act(dt, registry, entity);
   }
   else
     curStateIdx = 0;

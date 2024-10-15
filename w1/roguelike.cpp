@@ -4,10 +4,9 @@
 #include "stateMachine.h"
 #include "aiLibrary.h"
 
-static void add_patrol_attack_flee_sm(flecs::entity entity)
+static void add_patrol_attack_flee_sm(entt::registry& registry, entt::entity entity)
 {
-  entity.get([](StateMachine &sm)
-  {
+    auto& sm = registry.get<StateMachine>(entity);
     int patrol = sm.addState(create_patrol_state(3.f));
     int moveToEnemy = sm.addState(create_move_to_enemy_state());
     int fleeFromEnemy = sm.addState(create_flee_from_enemy_state());
@@ -21,155 +20,145 @@ static void add_patrol_attack_flee_sm(flecs::entity entity)
                      patrol, fleeFromEnemy);
 
     sm.addTransition(create_negate_transition(create_enemy_available_transition(7.f)), fleeFromEnemy, patrol);
-  });
 }
 
-static void add_patrol_flee_sm(flecs::entity entity)
+static void add_patrol_flee_sm(entt::registry& registry, entt::registry::entity_type entity)
 {
-  entity.get([](StateMachine &sm)
-  {
+    auto& sm = registry.get<StateMachine>(entity);
     int patrol = sm.addState(create_patrol_state(3.f));
     int fleeFromEnemy = sm.addState(create_flee_from_enemy_state());
 
     sm.addTransition(create_enemy_available_transition(3.f), patrol, fleeFromEnemy);
     sm.addTransition(create_negate_transition(create_enemy_available_transition(5.f)), fleeFromEnemy, patrol);
-  });
 }
 
-static void add_attack_sm(flecs::entity entity)
+static void add_attack_sm(entt::registry& registry, entt::entity entity)
 {
-  entity.get([](StateMachine &sm)
-  {
+    auto& sm = registry.get<StateMachine>(entity);
     sm.addState(create_move_to_enemy_state());
-  });
 }
 
-static flecs::entity create_monster(flecs::world &ecs, int x, int y, Color color)
+static entt::entity create_monster(entt::registry& registry, int x, int y, Color color)
 {
-  return ecs.entity()
-    .set(Position{x, y})
-    .set(MovePos{x, y})
-    .set(PatrolPos{x, y})
-    .set(Hitpoints{100.f})
-    .set(Action{EA_NOP})
-    .set(Color{color})
-    .set(StateMachine{})
-    .set(Team{1})
-    .set(NumActions{1, 0})
-    .set(MeleeDamage{20.f});
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<MovePos>(entity, x, y);
+    registry.emplace<PatrolPos>(entity, x, y);
+    registry.emplace<Hitpoints>(entity, 100.f);
+    registry.emplace<Action>(entity, EA_NOP);
+    registry.emplace<Color>(entity, color);
+    registry.emplace<StateMachine>(entity);
+    registry.emplace<Team>(entity, 1);
+    registry.emplace<NumActions>(entity, 1, 0);
+    registry.emplace<MeleeDamage>(entity, 20.f);
+    return entity;
 }
 
-static void create_player(flecs::world &ecs, int x, int y)
+static void create_player(entt::registry& registry, int x, int y)
 {
-  ecs.entity("player")
-    .set(Position{x, y})
-    .set(MovePos{x, y})
-    .set(Hitpoints{100.f})
-    .set(GetColor(0xeeeeeeff))
-    .set(Action{EA_NOP})
-    .add<IsPlayer>()
-    .set(Team{0})
-    .set(PlayerInput{})
-    .set(NumActions{2, 0})
-    .set(MeleeDamage{50.f});
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<MovePos>(entity, x, y);
+    registry.emplace<Hitpoints>(entity, 100.f);
+    registry.emplace<Color>(entity, GetColor(0xeeeeeeff));
+    registry.emplace<Action>(entity, EA_NOP);
+    registry.emplace<IsPlayer>(entity);
+    registry.emplace<Team>(entity, 0);
+    registry.emplace<PlayerInput>(entity);
+    registry.emplace<NumActions>(entity, 2, 0);
+    registry.emplace<MeleeDamage>(entity, 50.f);
 }
 
-static void create_heal(flecs::world &ecs, int x, int y, float amount)
+static void create_heal(entt::registry& registry, int x, int y, float amount)
 {
-  ecs.entity()
-    .set(Position{x, y})
-    .set(HealAmount{amount})
-    .set(GetColor(0x44ff44ff));
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<HealAmount>(entity, amount);
+    registry.emplace<Color>(entity, GetColor(0x44ff44ff));
 }
 
-static void create_powerup(flecs::world &ecs, int x, int y, float amount)
+static void create_powerup(entt::registry& registry, int x, int y, float amount)
 {
-  ecs.entity()
-    .set(Position{x, y})
-    .set(PowerupAmount{amount})
-    .set(Color{255, 255, 0, 255});
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<PowerupAmount>(entity, amount);
+    registry.emplace<Color>(entity, Color{255, 255, 0, 255});
 }
 
-static void register_roguelike_systems(flecs::world &ecs)
+void progress_roguelike_systems(entt::registry &registry)
 {
-  ecs.system<PlayerInput, Action, const IsPlayer>()
-    .each([&](PlayerInput &inp, Action &a, const IsPlayer)
+  static auto playersView = registry.view<PlayerInput, Action, const IsPlayer>();
+  for (auto &&[entity, inp, a]: playersView.each())
+  {
+    bool left = IsKeyDown(KEY_LEFT);
+    bool right = IsKeyDown(KEY_RIGHT);
+    bool up = IsKeyDown(KEY_UP);
+    bool down = IsKeyDown(KEY_DOWN);
+
+    if (left && !inp.left) a.action = EA_MOVE_LEFT;
+    if (right && !inp.right) a.action = EA_MOVE_RIGHT;
+    if (up && !inp.up) a.action = EA_MOVE_UP;
+    if (down && !inp.down) a.action = EA_MOVE_DOWN;
+
+    inp.left = left;
+    inp.right = right;
+    inp.up = up;
+    inp.down = down;
+  }
+  
+  static auto renderablesView = registry.view<const Position, const Color>();
+  for (auto &&[entity, pos, color]: renderablesView.each())
+  {
+    const Rectangle rect = {float(pos.x), float(pos.y), 1, 1};
+    if(registry.all_of<TextureSource>(entity))
     {
-      bool left = IsKeyDown(KEY_LEFT);
-      bool right = IsKeyDown(KEY_RIGHT);
-      bool up = IsKeyDown(KEY_UP);
-      bool down = IsKeyDown(KEY_DOWN);
-      if (left && !inp.left)
-        a.action = EA_MOVE_LEFT;
-      if (right && !inp.right)
-        a.action = EA_MOVE_RIGHT;
-      if (up && !inp.up)
-        a.action = EA_MOVE_UP;
-      if (down && !inp.down)
-        a.action = EA_MOVE_DOWN;
-      inp.left = left;
-      inp.right = right;
-      inp.up = up;
-      inp.down = down;
-    });
-  ecs.system<const Position, const Color>()
-    .without<TextureSource>(flecs::Wildcard)
-    .each([&](const Position &pos, const Color color)
-    {
-      const Rectangle rect = {float(pos.x), float(pos.y), 1, 1};
+      // const entt::registry::entity_type& targetEntity = registry.get<TextureSource>(entity);
+      // const Texture2D& texture = registry.get<Texture2D>(targetEntity);
+      // DrawTextureQuad(texture, Vector2{1, 1}, Vector2{0, 0}, rect, color);
+    } else {
       DrawRectangleRec(rect, color);
-    });
-  ecs.system<const Position, const Color>()
-    .with<TextureSource>(flecs::Wildcard)
-    .each([&](flecs::entity e, const Position &pos, const Color color)
-    {
-      const auto textureSrc = e.target<TextureSource>();
-      DrawTextureQuad(*textureSrc.get<Texture2D>(),
-          Vector2{1, 1}, Vector2{0, 0},
-          Rectangle{float(pos.x), float(pos.y), 1, 1}, color);
-    });
+    }
+  }
 }
 
 
-void init_roguelike(flecs::world &ecs)
+void init_roguelike(entt::registry &registry)
 {
-  register_roguelike_systems(ecs);
+  add_patrol_attack_flee_sm(registry, create_monster(registry, 5, 5, GetColor(0xee00eeff)));
+  add_patrol_attack_flee_sm(registry, create_monster(registry, 10, -5, GetColor(0xee00eeff)));
+  add_patrol_flee_sm(registry, create_monster(registry, -5, -5, GetColor(0x111111ff)));
+  add_attack_sm(registry, create_monster(registry, -5, 5, GetColor(0x880000ff)));
 
-  add_patrol_attack_flee_sm(create_monster(ecs, 5, 5, GetColor(0xee00eeff)));
-  add_patrol_attack_flee_sm(create_monster(ecs, 10, -5, GetColor(0xee00eeff)));
-  add_patrol_flee_sm(create_monster(ecs, -5, -5, GetColor(0x111111ff)));
-  add_attack_sm(create_monster(ecs, -5, 5, GetColor(0x880000ff)));
+  create_player(registry, 0, 0);
 
-  create_player(ecs, 0, 0);
+  create_powerup(registry, 7, 7, 10.f);
+  create_powerup(registry, 10, -6, 10.f);
+  create_powerup(registry, 10, -4, 10.f);
 
-  create_powerup(ecs, 7, 7, 10.f);
-  create_powerup(ecs, 10, -6, 10.f);
-  create_powerup(ecs, 10, -4, 10.f);
-
-  create_heal(ecs, -5, -5, 50.f);
-  create_heal(ecs, -5, 5, 50.f);
+  create_heal(registry, -5, -5, 50.f);
+  create_heal(registry, -5, 5, 50.f);
 }
 
-static bool is_player_acted(flecs::world &ecs)
+static bool is_player_acted(entt::registry &registry)
 {
-  static auto processPlayer = ecs.query<const IsPlayer, const Action>();
+  static auto playerActionsView = registry.view<const Action, const IsPlayer>();
   bool playerActed = false;
-  processPlayer.each([&](const IsPlayer, const Action &a)
+  for (auto &&[entity, a]: playerActionsView.each())
   {
     playerActed = a.action != EA_NOP;
-  });
+  }
   return playerActed;
 }
 
-static bool upd_player_actions_count(flecs::world &ecs)
+static bool upd_player_actions_count(entt::registry &registry)
 {
-  static auto updPlayerActions = ecs.query<const IsPlayer, NumActions>();
+  static auto playerNumActionsView = registry.view<NumActions, const IsPlayer>();
   bool actionsReached = false;
-  updPlayerActions.each([&](const IsPlayer, NumActions &na)
+  for (auto &&[entity, na]: playerNumActionsView.each())
   {
     na.curActions = (na.curActions + 1) % na.numActions;
     actionsReached |= na.curActions == 0;
-  });
+  }
   return actionsReached;
 }
 
@@ -186,103 +175,89 @@ static Position move_pos(Position pos, int action)
   return pos;
 }
 
-static void process_actions(flecs::world &ecs)
+static void process_actions(entt::registry &registry)
 {
-  static auto processActions = ecs.query<Action, Position, MovePos, const MeleeDamage, const Team>();
-  static auto checkAttacks = ecs.query<const MovePos, Hitpoints, const Team>();
-  // Process all actions
-  ecs.defer([&]
+  static auto actorsView = registry.view<Action, Position, MovePos, const MeleeDamage, const Team>();
+  static auto movedActorsView = registry.view<const MovePos, Hitpoints, const Team>();
+  for (auto &&[entity, a, pos, mpos, dmg, team]: actorsView.each())
   {
-    processActions.each([&](flecs::entity entity, Action &a, Position &pos, MovePos &mpos, const MeleeDamage &dmg, const Team &team)
+    Position nextPos = move_pos(pos, a.action);
+    bool blocked = false;
+    for (auto &&[enemy, epos, hp, enemy_team]: movedActorsView.each())
     {
-      Position nextPos = move_pos(pos, a.action);
-      bool blocked = false;
-      checkAttacks.each([&](flecs::entity enemy, const MovePos &epos, Hitpoints &hp, const Team &enemy_team)
+      if (entity != enemy && epos == nextPos)
       {
-        if (entity != enemy && epos == nextPos)
+        blocked = true;
+        if (team.team != enemy_team.team)
         {
-          blocked = true;
-          if (team.team != enemy_team.team)
-            hp.hitpoints -= dmg.damage;
+          hp.hitpoints -= dmg.damage;
+          if (hp.hitpoints <= 0.f)
+            registry.emplace<Dying>(enemy);
         }
-      });
-      if (blocked)
-        a.action = EA_NOP;
-      else
-        mpos = nextPos;
-    });
-    // now move
-    processActions.each([&](flecs::entity entity, Action &a, Position &pos, MovePos &mpos, const MeleeDamage &, const Team&)
-    {
-      pos = mpos;
+      }
+    }
+
+    if (blocked)
       a.action = EA_NOP;
-    });
-  });
-
-  static auto deleteAllDead = ecs.query<const Hitpoints>();
-  ecs.defer([&]
+    else
+      mpos = nextPos;
+  }
+  
+  static auto movingUnitsView = registry.view<Action, Position, MovePos>();
+  for (auto &&[entity, a, pos, mpos]: movingUnitsView.each())
   {
-    deleteAllDead.each([&](flecs::entity entity, const Hitpoints &hp)
-    {
-      if (hp.hitpoints <= 0.f)
-        entity.destruct();
-    });
-  });
+    pos = mpos;
+    a.action = EA_NOP;
+  }
 
-  static auto playerPickup = ecs.query<const IsPlayer, const Position, Hitpoints, MeleeDamage>();
-  static auto healPickup = ecs.query<const Position, const HealAmount>();
-  static auto powerupPickup = ecs.query<const Position, const PowerupAmount>();
-  ecs.defer([&]
+  static auto playersView = registry.view<const Position, Hitpoints, MeleeDamage, const IsPlayer>();
+  static auto healsView = registry.view<const Position, const HealAmount>();
+  static auto powerUpsView = registry.view<const Position, const PowerupAmount>();
+  for (auto &&[entity, pos, hp, dmg]: playersView.each())
   {
-    playerPickup.each([&](const IsPlayer&, const Position &pos, Hitpoints &hp, MeleeDamage &dmg)
+    for (auto &&[heal_entity, hpos, amt]: healsView.each())
     {
-      healPickup.each([&](flecs::entity entity, const Position &ppos, const HealAmount &amt)
+      if (pos == hpos)
       {
-        if (pos == ppos)
-        {
-          hp.hitpoints += amt.amount;
-          entity.destruct();
-        }
-      });
-      powerupPickup.each([&](flecs::entity entity, const Position &ppos, const PowerupAmount &amt)
+        hp.hitpoints += amt.amount;
+        registry.emplace<Dying>(heal_entity);
+      }
+    }
+
+    for (auto &&[powerup_entity, ppos, amt]: powerUpsView.each())
+    {
+      if (pos == ppos)
       {
-        if (pos == ppos)
-        {
-          dmg.damage += amt.amount;
-          entity.destruct();
-        }
-      });
-    });
-  });
+        dmg.damage += amt.amount;
+        registry.emplace<Dying>(powerup_entity);
+      }
+    }
+  }
+
+  static auto dyingsView = registry.view<Dying>();
+  registry.destroy(dyingsView.begin(), dyingsView.end());
 }
 
-void process_turn(flecs::world &ecs)
+void process_turn(entt::registry &registry)
 {
-  static auto stateMachineAct = ecs.query<StateMachine>();
-  if (is_player_acted(ecs))
+  if (is_player_acted(registry) && upd_player_actions_count(registry))
   {
-    if (upd_player_actions_count(ecs))
+    for (auto &&[entity, sm]: registry.view<StateMachine>().each())
     {
-      // Plan action for NPCs
-      ecs.defer([&]
-      {
-        stateMachineAct.each([&](flecs::entity e, StateMachine &sm)
-        {
-          sm.act(0.f, ecs, e);
-        });
-      });
+      sm.act(0.f, registry, entity);
     }
-    process_actions(ecs);
+    process_actions(registry);
   }
 }
 
-void print_stats(flecs::world &ecs)
+void print_stats(entt::registry &registry)
 {
-  static auto playerStatsQuery = ecs.query<const IsPlayer, const Hitpoints, const MeleeDamage>();
-  playerStatsQuery.each([&](const IsPlayer &, const Hitpoints &hp, const MeleeDamage &dmg)
+  static auto playerStatsView = registry.view<const Hitpoints, const MeleeDamage, const IsPlayer>();
+
+  for (auto &&[_, hp, dmg]: playerStatsView.each())
   {
     DrawText(TextFormat("hp: %d", int(hp.hitpoints)), 20, 20, 20, WHITE);
     DrawText(TextFormat("power: %d", int(dmg.damage)), 20, 40, 20, WHITE);
-  });
+  }
 }
 

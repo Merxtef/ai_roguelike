@@ -50,6 +50,8 @@ struct Hitpoints
   float hitpoints = 10.f;
 };
 
+struct Dying {};
+
 enum Actions
 {
   EA_NOP = 0,

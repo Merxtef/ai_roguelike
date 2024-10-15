@@ -13,5 +13,6 @@ file(GLOB_RECURSE HW1_SOURCES2 . ./*.[ch])
 
 add_executable(hw1 ${HW1_SOURCES1} ${HW1_SOURCES2})
 target_link_libraries(hw1 PUBLIC project_options project_warnings)
-target_link_libraries(hw1 PUBLIC raylib flecs)
+target_link_libraries(hw1 PUBLIC raylib)
 
+target_include_directories(hw1 PUBLIC ${CMAKE_SOURCE_DIR}/3rdParty/entt/single_include)

@@ -1,5 +1,5 @@
 #include "aiLibrary.h"
-#include <flecs.h>
+#include <entt/entt.hpp>
 #include "ecsTypes.h"
 #include "raylib.h"
 #include <cfloat>
@@ -10,7 +10,7 @@ class AttackEnemyState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, flecs::world &/*ecs*/, flecs::entity /*entity*/) const override {}
+  void act(float/* dt*/, entt::registry &/*registry*/, entt::registry::entity_type /*entity*/) const override {}
 };
 
 template<typename T>
@@ -42,29 +42,35 @@ static int inverse_move(int move)
 
 
 template<typename Callable>
-static void on_closest_enemy_pos(flecs::world &ecs, flecs::entity entity, Callable c)
+static void on_closest_enemy_pos(entt::registry &registry, entt::registry::entity_type entity, Callable c)
 {
-  static auto enemiesQuery = ecs.query<const Position, const Team>();
-  entity.insert([&](const Position &pos, const Team &t, Action &a)
-  {
-    flecs::entity closestEnemy;
+    auto view = registry.view<const Position, const Team>();
+    auto [pos, t, a] = registry.get<Position, Team, Action>(entity); // Get components for the entity
+
+    entt::entity closestEnemy = entt::null;
     float closestDist = FLT_MAX;
     Position closestPos;
-    enemiesQuery.each([&](flecs::entity enemy, const Position &epos, const Team &et)
+
+    // Iterate over all entities in the view
+    view.each([&](entt::entity enemy, const Position &epos, const Team &et)
     {
-      if (t.team == et.team)
-        return;
-      float curDist = dist(epos, pos);
-      if (curDist < closestDist)
-      {
-        closestDist = curDist;
-        closestPos = epos;
-        closestEnemy = enemy;
-      }
+        if (t.team == et.team)
+            return; // Skip if on the same team
+
+        float curDist = dist(epos, pos);
+        if (curDist < closestDist)
+        {
+            closestDist = curDist;
+            closestPos = epos;
+            closestEnemy = enemy;
+        }
     });
-    if (ecs.is_valid(closestEnemy))
-      c(a, pos, closestPos);
-  });
+
+    // If a valid closest enemy was found, call the provided function
+    if (registry.valid(closestEnemy))
+    {
+        c(a, pos, closestPos);
+    }
 }
 
 class MoveToEnemyState : public State
@@ -72,9 +78,9 @@ class MoveToEnemyState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, flecs::world &ecs, flecs::entity entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    on_closest_enemy_pos(ecs, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
+    on_closest_enemy_pos(registry, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
     {
       a.action = move_towards(pos, enemy_pos);
     });
@@ -87,9 +93,9 @@ public:
   FleeFromEnemyState() {}
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, flecs::world &ecs, flecs::entity entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    on_closest_enemy_pos(ecs, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
+    on_closest_enemy_pos(registry, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
     {
       a.action = inverse_move(move_towards(pos, enemy_pos));
     });
@@ -103,18 +109,21 @@ public:
   PatrolState(float dist) : patrolDist(dist) {}
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, flecs::world &ecs, flecs::entity entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    entity.insert([&](const Position &pos, const PatrolPos &ppos, Action &a)
+    auto &pos = registry.get<Position>(entity);
+    auto &ppos = registry.get<PatrolPos>(entity);
+    auto &a = registry.get<Action>(entity);
+
+    if (dist(pos, ppos) > patrolDist)
     {
-      if (dist(pos, ppos) > patrolDist)
-        a.action = move_towards(pos, ppos); // do a recovery walk
-      else
-      {
-        // do a random walk
-        a.action = GetRandomValue(EA_MOVE_START, EA_MOVE_END - 1);
-      }
-    });
+      a.action = move_towards(pos, ppos); // do a recovery walk
+    }
+    else
+    {
+      // do a random walk
+      a.action = GetRandomValue(EA_MOVE_START, EA_MOVE_END - 1);
+    }
   }
 };
 
@@ -123,7 +132,7 @@ class NopState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, flecs::world &ecs, flecs::entity entity) const override {}
+  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override {}
 };
 
 class EnemyAvailableTransition : public StateTransition
@@ -131,20 +140,22 @@ class EnemyAvailableTransition : public StateTransition
   float triggerDist;
 public:
   EnemyAvailableTransition(float in_dist) : triggerDist(in_dist) {}
-  bool isAvailable(flecs::world &ecs, flecs::entity entity) const override
+  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    static auto enemiesQuery = ecs.query<const Position, const Team>();
+    auto &pos = registry.get<Position>(entity);
+    auto &t = registry.get<Team>(entity);
+
+    static auto enemiesView = registry.view<const Position, const Team>();
     bool enemiesFound = false;
-    entity.get([&](const Position &pos, const Team &t)
+
+    enemiesView.each([&](entt::registry::entity_type enemy, const Position &epos, const Team &et)
     {
-      enemiesQuery.each([&](flecs::entity enemy, const Position &epos, const Team &et)
-      {
-        if (t.team == et.team)
-          return;
-        float curDist = dist(epos, pos);
-        enemiesFound |= curDist <= triggerDist;
-      });
+      if (t.team == et.team)
+        return;
+      float curDist = dist(epos, pos);
+      enemiesFound |= curDist <= triggerDist;
     });
+
     return enemiesFound;
   }
 };
@@ -154,21 +165,17 @@ class HitpointsLessThanTransition : public StateTransition
   float threshold;
 public:
   HitpointsLessThanTransition(float in_thres) : threshold(in_thres) {}
-  bool isAvailable(flecs::world &ecs, flecs::entity entity) const override
+  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    bool hitpointsThresholdReached = false;
-    entity.get([&](const Hitpoints &hp)
-    {
-      hitpointsThresholdReached |= hp.hitpoints < threshold;
-    });
-    return hitpointsThresholdReached;
+    const auto &hp = registry.get<Hitpoints>(entity);
+    return hp.hitpoints < threshold;
   }
 };
 
 class EnemyReachableTransition : public StateTransition
 {
 public:
-  bool isAvailable(flecs::world &ecs, flecs::entity entity) const override
+  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
   {
     return false;
   }
@@ -181,9 +188,9 @@ public:
   NegateTransition(const StateTransition *in_trans) : transition(in_trans) {}
   ~NegateTransition() override { delete transition; }
 
-  bool isAvailable(flecs::world &ecs, flecs::entity entity) const override
+  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    return !transition->isAvailable(ecs, entity);
+    return !transition->isAvailable(registry, entity);
   }
 };
 
@@ -199,9 +206,9 @@ public:
     delete rhs;
   }
 
-  bool isAvailable(flecs::world &ecs, flecs::entity entity) const override
+  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
   {
-    return lhs->isAvailable(ecs, entity) && rhs->isAvailable(ecs, entity);
+    return lhs->isAvailable(registry, entity) && rhs->isAvailable(registry, entity);
   }
 };
 

@@ -1,7 +1,8 @@
 #pragma once
 
-#include <flecs.h>
+#include <entt/entt.hpp>
 
-void init_roguelike(flecs::world &ecs);
-void process_turn(flecs::world &ecs);
-void print_stats(flecs::world &ecs);
+void progress_roguelike_systems(entt::registry &registry);
+void init_roguelike(entt::registry &registry);
+void process_turn(entt::registry &registry);
+void print_stats(entt::registry &registry);
