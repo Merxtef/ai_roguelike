@@ -10,7 +10,7 @@ class AttackEnemyState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, entt::registry &/*registry*/, entt::registry::entity_type /*entity*/) const override {}
+  void act(float/* dt*/, entt::registry &/*registry*/, entt::entity /*entity*/) const override {}
 };
 
 template<typename T>
@@ -42,7 +42,7 @@ static int inverse_move(int move)
 
 
 template<typename Callable>
-static void on_closest_enemy_pos(entt::registry &registry, entt::registry::entity_type entity, Callable c)
+static void on_closest_enemy_pos(entt::registry &registry, entt::entity entity, Callable c)
 {
     auto view = registry.view<const Position, const Team>();
     auto [pos, t, a] = registry.get<Position, Team, Action>(entity); // Get components for the entity
@@ -78,7 +78,7 @@ class MoveToEnemyState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override
   {
     on_closest_enemy_pos(registry, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
     {
@@ -93,7 +93,7 @@ public:
   FleeFromEnemyState() {}
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override
   {
     on_closest_enemy_pos(registry, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
     {
@@ -109,7 +109,7 @@ public:
   PatrolState(float dist) : patrolDist(dist) {}
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override
   {
     auto &pos = registry.get<Position>(entity);
     auto &ppos = registry.get<PatrolPos>(entity);
@@ -132,7 +132,7 @@ class NopState : public State
 public:
   void enter() const override {}
   void exit() const override {}
-  void act(float/* dt*/, entt::registry &registry, entt::registry::entity_type entity) const override {}
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override {}
 };
 
 class EnemyAvailableTransition : public StateTransition
@@ -140,7 +140,7 @@ class EnemyAvailableTransition : public StateTransition
   float triggerDist;
 public:
   EnemyAvailableTransition(float in_dist) : triggerDist(in_dist) {}
-  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     auto &pos = registry.get<Position>(entity);
     auto &t = registry.get<Team>(entity);
@@ -148,7 +148,7 @@ public:
     static auto enemiesView = registry.view<const Position, const Team>();
     bool enemiesFound = false;
 
-    enemiesView.each([&](entt::registry::entity_type enemy, const Position &epos, const Team &et)
+    enemiesView.each([&](entt::entity enemy, const Position &epos, const Team &et)
     {
       if (t.team == et.team)
         return;
@@ -165,7 +165,7 @@ class HitpointsLessThanTransition : public StateTransition
   float threshold;
 public:
   HitpointsLessThanTransition(float in_thres) : threshold(in_thres) {}
-  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     const auto &hp = registry.get<Hitpoints>(entity);
     return hp.hitpoints < threshold;
@@ -175,7 +175,7 @@ public:
 class EnemyReachableTransition : public StateTransition
 {
 public:
-  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     return false;
   }
@@ -188,7 +188,7 @@ public:
   NegateTransition(const StateTransition *in_trans) : transition(in_trans) {}
   ~NegateTransition() override { delete transition; }
 
-  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     return !transition->isAvailable(registry, entity);
   }
@@ -206,7 +206,7 @@ public:
     delete rhs;
   }
 
-  bool isAvailable(entt::registry &registry, entt::registry::entity_type entity) const override
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     return lhs->isAvailable(registry, entity) && rhs->isAvailable(registry, entity);
   }

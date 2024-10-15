@@ -11,7 +11,7 @@ StateMachine::~StateMachine()
   transitions.clear();
 }
 
-void StateMachine::act(float dt, entt::registry &registry, entt::registry::entity_type entity)
+void StateMachine::act(float dt, entt::registry &registry, entt::entity entity)
 {
   if (curStateIdx < states.size())
   {

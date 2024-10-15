@@ -22,7 +22,7 @@ static void add_patrol_attack_flee_sm(entt::registry& registry, entt::entity ent
     sm.addTransition(create_negate_transition(create_enemy_available_transition(7.f)), fleeFromEnemy, patrol);
 }
 
-static void add_patrol_flee_sm(entt::registry& registry, entt::registry::entity_type entity)
+static void add_patrol_flee_sm(entt::registry& registry, entt::entity entity)
 {
     auto& sm = registry.get<StateMachine>(entity);
     int patrol = sm.addState(create_patrol_state(3.f));
@@ -112,7 +112,7 @@ void progress_roguelike_systems(entt::registry &registry)
     const Rectangle rect = {float(pos.x), float(pos.y), 1, 1};
     if(registry.all_of<TextureSource>(entity))
     {
-      // const entt::registry::entity_type& targetEntity = registry.get<TextureSource>(entity);
+      // const entt::entity& targetEntity = registry.get<TextureSource>(entity);
       // const Texture2D& texture = registry.get<Texture2D>(targetEntity);
       // DrawTextureQuad(texture, Vector2{1, 1}, Vector2{0, 0}, rect, color);
     } else {
