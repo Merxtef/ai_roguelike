@@ -55,7 +55,7 @@ static void on_closest_enemy_pos(entt::registry &registry, entt::entity entity, 
     for (auto &&[entt, epos, et]: view.each())
     {
       if (t.team == et.team)
-          return; // Skip if on the same team
+          break; // Skip if on the same team
 
       float curDist = dist(epos, pos);
       if (curDist < closestDist)
@@ -151,7 +151,7 @@ public:
     for (auto &&[enemy, epos, et]: enemiesView.each())
     {
       if (t.team == et.team)
-        return;
+        break;
       float curDist = dist(epos, pos);
       enemiesFound |= curDist <= triggerDist;
     }
