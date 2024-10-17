@@ -346,8 +346,6 @@ static void process_actions(entt::registry &registry)
         add_dummy_statemachine(registry, spawnedEntity);
       }
 
-      printf("COPIED!\n");
-
       if (registry.all_of<Position, MovePos>(spawnedEntity))
       {
         Position &pos = registry.get<Position>(spawnedEntity);
