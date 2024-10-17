@@ -4,6 +4,26 @@
 #include "stateMachine.h"
 #include "aiLibrary.h"
 
+template<typename... Components>
+void copyComponents(entt::registry &registry, entt::entity source, entt::entity destination) {
+    // Using fold expression to iterate over each component type
+    ([&]() {
+        // Check if the source entity has the component
+        if (registry.any_of<Components>(source)) {
+            // Get the component from the source entity
+            const auto &component = registry.get<Components>(source);
+            // Assign the component to the destination entity
+            registry.emplace_or_replace<Components>(destination, component);
+        }
+    }(), ...); // The fold expression expands the lambda for each type in Components
+}
+
+static void add_dummy_statemachine(entt::registry& registry, entt::entity entity)
+{
+  auto& sm = registry.emplace_or_replace<StateMachine>(entity);
+  sm.addState(create_move_to_enemy_state());
+}
+
 static void add_patrol_attack_flee_sm(entt::registry& registry, entt::entity entity)
 {
     auto& sm = registry.get<StateMachine>(entity);
@@ -38,6 +58,27 @@ static void add_attack_sm(entt::registry& registry, entt::entity entity)
     sm.addState(create_move_to_enemy_state());
 }
 
+static void add_heal_attack_sm(entt::registry& registry, entt::entity entity)
+{
+    auto& sm = registry.get<StateMachine>(entity);
+
+    int followAndHeal = sm.addState(create_follow_and_heal_player_state());
+    int attackEnemy = sm.addState(create_attack_enemy_state());
+
+    sm.addTransition(create_enemy_available_transition(1.01f), followAndHeal, attackEnemy);
+    sm.addTransition(create_player_far_transition(1.5f), attackEnemy, followAndHeal);
+}
+
+static void add_flee_and_arrow_attack_sm(entt::registry& registry, entt::entity entity)
+{
+    auto& sm = registry.get<StateMachine>(entity);
+    int fleeFromEnemy = sm.addState(create_flee_from_enemy_state());
+    int arrowAttack = sm.addState(create_arrow_attack_state());
+
+    sm.addTransition(create_negate_transition(create_enemy_available_transition(7.f)), fleeFromEnemy, arrowAttack);
+    sm.addTransition(create_enemy_available_transition(5.f), arrowAttack, fleeFromEnemy);
+}
+
 static entt::entity create_monster(entt::registry& registry, int x, int y, Color color)
 {
     auto entity = registry.create();
@@ -45,6 +86,37 @@ static entt::entity create_monster(entt::registry& registry, int x, int y, Color
     registry.emplace<MovePos>(entity, x, y);
     registry.emplace<PatrolPos>(entity, x, y);
     registry.emplace<Hitpoints>(entity, 100.f);
+    registry.emplace<Action>(entity, EA_NOP);
+    registry.emplace<Color>(entity, color);
+    registry.emplace<StateMachine>(entity);
+    registry.emplace<Team>(entity, 1);
+    registry.emplace<NumActions>(entity, 1, 0);
+    registry.emplace<MeleeDamage>(entity, 20.f);
+    return entity;
+}
+
+static entt::entity create_slime(entt::registry& registry, int x, int y, Color color)
+{
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<MovePos>(entity, x, y);
+    registry.emplace<Hitpoints>(entity, 200.f);
+    registry.emplace<Action>(entity, EA_NOP);
+    registry.emplace<Color>(entity, color);
+    registry.emplace<StateMachine>(entity);
+    registry.emplace<Team>(entity, 1);
+    registry.emplace<NumActions>(entity, 1, 0);
+    registry.emplace<MeleeDamage>(entity, 20.f);
+    registry.emplace<SpawnSingleCopyOnHPThreshold>(entity, 100.f);
+    return entity;
+}
+
+static entt::entity create_archer(entt::registry& registry, int x, int y, Color color)
+{
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<MovePos>(entity, x, y);
+    registry.emplace<Hitpoints>(entity, 50.f);
     registry.emplace<Action>(entity, EA_NOP);
     registry.emplace<Color>(entity, color);
     registry.emplace<StateMachine>(entity);
@@ -67,6 +139,20 @@ static void create_player(entt::registry& registry, int x, int y)
     registry.emplace<PlayerInput>(entity);
     registry.emplace<NumActions>(entity, 2, 0);
     registry.emplace<MeleeDamage>(entity, 50.f);
+}
+
+static entt::entity create_healer(entt::registry& registry, int x, int y)
+{
+    auto entity = registry.create();
+    registry.emplace<Position>(entity, x, y);
+    registry.emplace<MovePos>(entity, x, y);
+    registry.emplace<Color>(entity, GetColor(0x000011ff));
+    registry.emplace<StateMachine>(entity);
+    registry.emplace<Action>(entity, EA_NOP);
+    registry.emplace<Team>(entity, 0);
+    registry.emplace<MeleeDamage>(entity, 50.f);
+    registry.emplace<Healing>(entity);
+    return entity;
 }
 
 static void create_heal(entt::registry& registry, int x, int y, float amount)
@@ -128,8 +214,11 @@ void init_roguelike(entt::registry &registry)
   add_patrol_attack_flee_sm(registry, create_monster(registry, 10, -5, GetColor(0xee00eeff)));
   add_patrol_flee_sm(registry, create_monster(registry, -5, -5, GetColor(0x111111ff)));
   add_attack_sm(registry, create_monster(registry, -5, 5, GetColor(0x880000ff)));
+  add_flee_and_arrow_attack_sm(registry, create_archer(registry, 2, 2, GetColor(0xcccc00ff)));
+  add_attack_sm(registry, create_slime(registry, 12, 12, GetColor(0x008800ff)));
 
   create_player(registry, 0, 0);
+  add_heal_attack_sm(registry, create_healer(registry, 0, 1));
 
   create_powerup(registry, 7, 7, 10.f);
   create_powerup(registry, 10, -6, 10.f);
@@ -236,6 +325,40 @@ static void process_actions(entt::registry &registry)
 
   static auto dyingsView = registry.view<Dying>();
   registry.destroy(dyingsView.begin(), dyingsView.end());
+
+  // It's only reasonable if instant kill whould bypass that copy spawn
+  static auto copySpawnersView = registry.view<Hitpoints, SpawnSingleCopyOnHPThreshold>();
+  for (auto &&[entity, hp, spawnCopyData]: copySpawnersView.each())
+  {
+    if (spawnCopyData.isUnused && hp.hitpoints < spawnCopyData.threshold)
+    {
+      spawnCopyData.isUnused = false;
+
+      entt::entity spawnedEntity = registry.create();
+      copyComponents<
+        Position, MovePos, PatrolPos,
+        Hitpoints, Action, Color,
+        Team, NumActions, MeleeDamage
+      >(registry, entity, spawnedEntity);
+      
+      if (registry.any_of<StateMachine>(entity))
+      {
+        add_dummy_statemachine(registry, spawnedEntity);
+      }
+
+      printf("COPIED!\n");
+
+      if (registry.all_of<Position, MovePos>(spawnedEntity))
+      {
+        Position &pos = registry.get<Position>(spawnedEntity);
+        MovePos &mpos = registry.get<MovePos>(spawnedEntity);
+        pos.x += 1;
+        pos.y += 1;
+        mpos.x = pos.x;
+        mpos.y = pos.y;
+      }
+    }
+  }
 }
 
 void process_turn(entt::registry &registry)

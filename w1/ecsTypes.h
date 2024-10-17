@@ -50,6 +50,13 @@ struct Hitpoints
   float hitpoints = 10.f;
 };
 
+struct Healing
+{
+  float amount = 10.f;
+  int currentCountdown = 0;
+  int totalCountdown = 10;
+};
+
 struct Dying {};
 
 enum Actions
@@ -112,4 +119,12 @@ struct Team
 };
 
 struct TextureSource {};
+
+struct ArrowDestination : public Position {};
+
+struct SpawnSingleCopyOnHPThreshold
+{
+  float threshold = 10.f;
+  bool isUnused = true;
+};
 

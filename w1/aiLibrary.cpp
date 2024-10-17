@@ -52,10 +52,10 @@ static void on_closest_enemy_pos(entt::registry &registry, entt::entity entity, 
     Position closestPos;
 
     // Iterate over all entities in the view
-    for (auto &&[entt, epos, et]: view.each())
+    for (auto &&[enemy, epos, et]: view.each())
     {
       if (t.team == et.team)
-          return; // Skip if on the same team
+          break; // Skip if on the same team
 
       float curDist = dist(epos, pos);
       if (curDist < closestDist)
@@ -127,6 +127,84 @@ public:
   }
 };
 
+class FollowAndHealPlayerState : public State
+{
+public:
+  void enter() const override {}
+  void exit() const override {}
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override {
+    static auto playersView = registry.view<const Position, Hitpoints, const IsPlayer>();
+
+    entt::entity playerEntity = playersView.front();
+    if (playerEntity == entt::null)
+      return;
+    
+    const Position& pos = registry.get<const Position>(entity);
+    Action &a = registry.get<Action>(entity);
+    Healing& heal = registry.get<Healing>(entity);
+
+    const Position& player_pos = registry.get<const Position>(playerEntity);
+    Hitpoints& player_hp = registry.get<Hitpoints>(playerEntity);
+
+    heal.currentCountdown -= 1;
+    if (heal.currentCountdown < 0)
+      heal.currentCountdown = 0;
+
+    if (dist_sq(pos, player_pos) > (1.45f * 1.45f))
+      a.action = move_towards(pos, player_pos);
+    else
+    {
+      if (heal.currentCountdown == 0)
+      {
+        player_hp.hitpoints += heal.amount;
+        heal.currentCountdown = heal.totalCountdown;
+      }
+    }
+  }
+};
+
+class ArrowFlyState : public State
+{
+public:
+  void enter() const override {}
+  void exit() const override {}
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override {
+    const Position& pos = registry.get<const Position>(entity);
+    const ArrowDestination& dst = registry.get<const ArrowDestination>(entity);
+
+    if (pos == dst)
+    {
+      registry.emplace<Dying>(entity);
+      return;
+    }
+
+    Action& a = registry.get<Action>(entity);
+    a.action = move_towards(pos, dst);
+  }
+};
+
+class ArrowAttackState : public State
+{
+public:
+  void enter() const override {}
+  void exit() const override {}
+  void act(float/* dt*/, entt::registry &registry, entt::entity entity) const override {
+    on_closest_enemy_pos(registry, entity, [&](Action &a, const Position &pos, const Position &enemy_pos)
+    {
+      entt::entity arrowEntity = registry.create();
+      registry.emplace<Position>(arrowEntity, pos.x, pos.y);
+      registry.emplace<MovePos>(arrowEntity, pos.x, pos.y);
+      registry.emplace<ArrowDestination>(arrowEntity, enemy_pos.x, enemy_pos.y);
+      registry.emplace<Color>(arrowEntity, GetColor(0xcc0000ff));
+      registry.emplace<Action>(arrowEntity);
+      registry.emplace<Team>(arrowEntity, 1);
+      registry.emplace<MeleeDamage>(arrowEntity, 10.f);  // Well, that's funny
+      StateMachine& sm = registry.emplace<StateMachine>(arrowEntity);
+      sm.addState(new ArrowFlyState());
+    });
+  }
+};
+
 class NopState : public State
 {
 public:
@@ -151,7 +229,7 @@ public:
     for (auto &&[enemy, epos, et]: enemiesView.each())
     {
       if (t.team == et.team)
-        return;
+        break;
       float curDist = dist(epos, pos);
       enemiesFound |= curDist <= triggerDist;
     }
@@ -178,6 +256,27 @@ public:
   bool isAvailable(entt::registry &registry, entt::entity entity) const override
   {
     return false;
+  }
+};
+
+class PlayerFarTransition : public StateTransition
+{
+  float triggerDist_sq;
+public:
+  PlayerFarTransition(float dist): triggerDist_sq(dist * dist) {}
+
+  bool isAvailable(entt::registry &registry, entt::entity entity) const override
+  {
+    static auto playersView = registry.view<const Position, const IsPlayer>();
+
+    entt::entity playerEntity = playersView.front();
+    if (playerEntity == entt::null)
+      return false;
+    
+    const Position& pos = registry.get<const Position>(entity);
+    const Position& player_pos = registry.get<const Position>(playerEntity);
+    
+    return dist_sq(pos, player_pos) > triggerDist_sq;
   }
 };
 
@@ -234,6 +333,16 @@ State *create_patrol_state(float patrol_dist)
   return new PatrolState(patrol_dist);
 }
 
+State *create_follow_and_heal_player_state()
+{
+  return new FollowAndHealPlayerState();
+}
+
+State *create_arrow_attack_state()
+{
+  return new ArrowAttackState();
+}
+
 State *create_nop_state()
 {
   return new NopState();
@@ -253,6 +362,11 @@ StateTransition *create_enemy_reachable_transition()
 StateTransition *create_hitpoints_less_than_transition(float thres)
 {
   return new HitpointsLessThanTransition(thres);
+}
+
+StateTransition *create_player_far_transition(float dist)
+{
+  return new PlayerFarTransition(dist);
 }
 
 StateTransition *create_negate_transition(StateTransition *in)
